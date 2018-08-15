@@ -43,9 +43,6 @@ jobs:
           name: Install tox
           command: 'sudo pip install tox'
       - run:
-          name: Install pylint pre for py37
-          command: 'sudo pip install --pre pylint astroid --upgrade'
-      - run:
           name: Test with tox
           command: 'tox -e py37'
 
