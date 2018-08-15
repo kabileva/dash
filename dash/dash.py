@@ -6,7 +6,7 @@ import collections
 import importlib
 import json
 import pkgutil
-import uuid
+import threading
 import warnings
 import re
 
@@ -25,6 +25,8 @@ from . import exceptions
 from ._utils import AttributeDict as _AttributeDict
 from ._utils import interpolate_str as _interpolate
 from ._utils import format_tag as _format_tag
+from ._utils import generate_hash as _generate_hash
+from . import _watch
 
 _default_index = '''
 <!DOCTYPE html>
@@ -62,6 +64,7 @@ _re_index_config_id = re.compile(r'id="_dash-config"')
 _re_index_scripts_id = re.compile(r'src=".*dash[-_]renderer.*"')
 
 
+
 # pylint: disable=too-many-instance-attributes
 # pylint: disable=too-many-arguments, too-many-locals
 class Dash(object):
@@ -96,7 +99,7 @@ class Dash(object):
             flask.helpers.get_root_path(name), 'assets'
         )
 
-        self._reload_hash = str(uuid.uuid4().hex).strip('-')\
+        self._reload_hash = _generate_hash()\
             if hot_reload else ''
         self._reload_interval = hot_reload_interval
 
@@ -197,6 +200,15 @@ class Dash(object):
         self._layout = None
         self._cached_layout = None
         self.routes = []
+
+        self._lock = threading.RLock()
+        self._watch_thread = None
+        if hot_reload:
+            self._watch_thread = threading.Thread(
+                target=lambda: _watch.watch([self._assets_folder],
+                                            self._on_assets_change,
+                                            sleep_time=0.5))
+            self._watch_thread.start()
 
     @property
     def layout(self):
@@ -912,6 +924,11 @@ class Dash(object):
                     self.css.append_css(add_resource(path))
                 elif f == 'favicon.ico':
                     self._favicon = path
+
+    def _on_assets_change(self, _):
+        self._lock.acquire()
+        self._reload_hash = _generate_hash()
+        self._lock.release()
 
     def run_server(self,
                    port=8050,
